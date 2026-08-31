@@ -1,0 +1,12 @@
+/.bundle/
+/pkg/
+/tmp/
+/node_modules/
+/.local/
+
+# Upstream checkouts cloned by the build scripts
+/upstream/
+
+# Intermediate build outputs
+/src/dtln-worklet/dtln.js
+/src/dfn3-worklet/pkg
