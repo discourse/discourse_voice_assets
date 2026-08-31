@@ -10,3 +10,4 @@
 # Intermediate build outputs
 /src/dtln-worklet/dtln.js
 /src/dfn3-worklet/pkg
+/vendor/bundle/
