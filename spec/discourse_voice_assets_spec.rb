@@ -6,10 +6,12 @@ RSpec.describe DiscourseVoiceAssets do
   end
 
   it "vendors exactly the declared asset directories" do
+    # CI's bundler-cache installs gems into vendor/bundle.
     on_disk =
       Dir
         .children(described_class.vendor_path)
-        .select { |c| File.directory?(described_class.vendor_path(c)) }
+        .select { |c| File.directory?(described_class.vendor_path(c)) } -
+        %w[bundle]
     expect(on_disk.sort).to eq(described_class::DIRECTORIES)
   end
 
