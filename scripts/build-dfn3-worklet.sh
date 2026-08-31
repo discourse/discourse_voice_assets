@@ -65,7 +65,7 @@ BUNDLE_TMP="$(mktemp --suffix=.js)"
 trap 'rm -f "${BUNDLE_TMP}"' EXIT
 bundle_worklet "dfn3" "${BUNDLE_TMP}"
 
-echo "==> Step 4: Emit content-hashed assets + manifest"
+echo "==> Step 4: Emit assets"
 
 emit_ns_assets "dfn3" "${BUNDLE_TMP}" \
   "${WORKLET_SRC_DIR}/pkg/df_bg.wasm" \

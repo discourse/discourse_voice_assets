@@ -29,18 +29,18 @@ DiscourseVoiceAssets::DIRECTORIES # => %w[dfn3 dtln livekit mediapipe rnnoise st
 DiscourseVoiceAssets.vendor_path("stt") # absolute path to the vendored dir
 ```
 
-At plugin activation each directory is symlinked into the plugin's
-`public/javascripts/`, so files are served at the same
-`/plugins/resenha/javascripts/<dir>/...` URLs as when they were committed
-directly. Filenames are content-hashed (the `/plugins/` prefix is served with
-long-lived immutable caching), and the plugin imports them through the
-generated manifest modules under `manifests/` — the plugin commits verbatim
-copies of those manifests (its JS build graph cannot import from a gem) and an
-integrity spec keeps the copies in sync with this gem's vendor tree.
+At plugin activation the vendor tree is symlinked into the plugin's
+`public/javascripts/<gem version>/`, and the server exposes that base path to
+the client, so assets are served at
+`/plugins/resenha/javascripts/<version>/<dir>/...`. Filenames are stable
+across releases — the version-stamped URL provides the cache busting that
+content hashes otherwise would (the `/plugins/` prefix is served with
+long-lived immutable caching) — so bumping the gem requires no other plugin
+change.
 
 ## Rebuilding assets
 
-Everything under `vendor/` and `manifests/` is generated. Upstreams are pinned
+Everything under `vendor/` is generated. Upstreams are pinned
 (git SHA or npm version); build scripts clone into the gitignored `upstream/`
 directory and apply patches from `src/<engine>-worklet/patches/` where needed.
 
@@ -61,12 +61,12 @@ node scripts/smoke-stt-worker.mjs
 
 ## Releasing a new version
 
-1. Rebuild the affected assets (above) and commit `vendor/` + `manifests/`.
+1. Rebuild the affected assets (above) and commit `vendor/`.
 2. Bump `lib/discourse_voice_assets/version.rb`, tag, and release the gem.
-3. In Discourse: bump the gem, copy the changed manifest modules from
-   `manifests/` over the plugin's committed copies (`stt-assets.js` and
-   `ns-assets/*.js` under `assets/javascripts/discourse/lib/resenha/`), and
-   run the plugin's vendored-assets integrity spec.
+3. In Discourse: bump the gem version. Nothing else — the plugin references
+   the stable filenames and derives the versioned URL at runtime. Renaming or
+   removing a vendored file (see the spec's stable-path list) is a breaking
+   change needing a coordinated plugin update.
 
 ## Development
 

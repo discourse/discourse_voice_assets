@@ -24,7 +24,7 @@ import http from "node:http";
 import { createReadStream } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import { chromium, firefox } from "playwright";
 
 const gemRoot = path.resolve(
@@ -37,14 +37,7 @@ if (!fixturePath) {
   process.exit(2);
 }
 
-const manifest = await import(
-  pathToFileURL(
-    path.join(
-      gemRoot,
-      "manifests/stt-assets.js"
-    )
-  )
-);
+
 
 const PAGE = `<!doctype html><script type="module">
 window.log = (...args) => console.log("[smoke]", ...args);
@@ -232,11 +225,11 @@ await page.goto(`http://127.0.0.1:${server.address().port}/`);
 
 try {
   const result = await page.evaluate((paths) => window.runTest(paths), {
-    worker: toLocal(manifest.STT_WORKER_FILE),
-    vadBundle: toLocal(manifest.VAD_BUNDLE_FILE),
-    ortJs: toLocal(manifest.ORT_WASM_JS_FILE),
-    ortBinary: toLocal(manifest.ORT_WASM_BINARY_FILE),
-    vadAssets: toLocal(manifest.VAD_ASSET_DIR),
+    worker: toLocal("subtitles-worker.js"),
+    vadBundle: toLocal("vad.js"),
+    ortJs: toLocal("ort/ort-wasm-simd-threaded.jsep.js"),
+    ortBinary: toLocal("ort/ort-wasm-simd-threaded.jsep.wasm"),
+    vadAssets: toLocal("vad/"),
     modelBase: process.env.STT_MODEL_DIR ? "/model/" : undefined,
     modelBaseAbsolute: process.env.STT_MODEL_BASE_URL || undefined,
     backend: process.env.STT_BACKEND || undefined,

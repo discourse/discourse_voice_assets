@@ -17,8 +17,7 @@
     "livekit-client": "^2.20.1",
     "onnxruntime-web": "1.24.1",
     "parakeet.js": "1.4.4",
-    "playwright": "^1.59.1",
-    "prettier": "3.8.1"
+    "playwright": "^1.59.1"
   },
   "engines": {
     "node": ">= 22",

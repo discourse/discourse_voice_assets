@@ -7,14 +7,14 @@
 //   node scripts/smoke-ns-worklet.mjs dtln 0.1
 //   node scripts/smoke-ns-worklet.mjs rnnoise 0.95
 //
-// <engine> resolves the worklet/wasm/model paths from the generated manifest
-// in manifests/<engine>.js.
+// <engine> resolves the worklet/wasm/model paths under vendor/<engine>/
+// (stable filenames; only dfn3 ships a model file).
 // maxRatio is the maximum allowed output/input RMS ratio (a bit-exact
 // passthrough scores 1.0; engines differ in how hard they cut white noise).
 import { readFile } from "node:fs/promises";
 import http from "node:http";
 import path from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 
 const gemRoot = path.resolve(
@@ -28,12 +28,12 @@ if (!engine) {
 }
 const maxRatio = Number(maxRatioArg ?? 0.95);
 
-const manifestPath = path.join(
-  gemRoot,
-  `manifests/${engine}.js`
-);
-const manifest = await import(pathToFileURL(manifestPath));
 const localPath = (file) => path.join(gemRoot, "vendor", file);
+const engineFiles = {
+  workletFile: `${engine}/${engine}-worklet.js`,
+  wasmFile: `${engine}/${engine}.wasm`,
+  modelFile: engine === "dfn3" ? "dfn3/dfn3-model.bin" : null,
+};
 
 const NOISE_AMPLITUDE = 0.5;
 
@@ -80,11 +80,11 @@ window.runTest = async (hasModel) => {
 </script>`;
 
 const files = {
-  "/worklet.js": localPath(manifest.WORKLET_FILE),
-  "/engine.wasm": localPath(manifest.WASM_FILE),
+  "/worklet.js": localPath(engineFiles.workletFile),
+  "/engine.wasm": localPath(engineFiles.wasmFile),
 };
-if (manifest.MODEL_FILE) {
-  files["/model.bin"] = localPath(manifest.MODEL_FILE);
+if (engineFiles.modelFile) {
+  files["/model.bin"] = localPath(engineFiles.modelFile);
 }
 
 const server = http.createServer(async (req, res) => {
@@ -118,7 +118,7 @@ await page.goto(`http://127.0.0.1:${server.address().port}/`);
 try {
   const result = await page.evaluate(
     (m) => window.runTest(m),
-    !!manifest.MODEL_FILE
+    !!engineFiles.modelFile
   );
   console.log(`${engine}: output/input RMS ratio ${result.ratio.toFixed(3)}`);
   // Zero output is legitimate: a strong model gates speechless noise to

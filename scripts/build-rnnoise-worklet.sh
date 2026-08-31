@@ -57,6 +57,6 @@ echo "==> Step 3: Bundle AudioWorklet processor"
 
 bundle_worklet "rnnoise" "${BUNDLE_TMP}"
 
-echo "==> Step 4: Emit content-hashed assets + manifest"
+echo "==> Step 4: Emit assets"
 
 emit_ns_assets "rnnoise" "${BUNDLE_TMP}" "${WASM_TMP}"

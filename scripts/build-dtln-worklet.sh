@@ -13,11 +13,9 @@
 #   2. Compiles it to WASM via Emscripten (small modularized JS glue +
 #      separate dtln_rs.wasm)
 #   3. Bundles the AudioWorklet processor + glue with esbuild
-#   4. Emits content-hashed files under vendor/dtln/ and
-#      regenerates the manifest module the loader imports
+#   4. Emits vendor/dtln/ under stable filenames
 #
-# Commit the emitted vendor/dtln/ files and the regenerated
-# manifests/dtln.js (copy both into the consuming plugin). The build only
+# Commit the emitted vendor/dtln/ files. The build only
 # needs to be re-run when updating dtln-rs, the patches, or the worklet
 # processor source.
 
@@ -78,6 +76,6 @@ BUNDLE_TMP="$(mktemp --suffix=.js)"
 trap 'rm -f "${BUNDLE_TMP}"' EXIT
 bundle_worklet "dtln" "${BUNDLE_TMP}"
 
-echo "==> Step 4: Emit content-hashed assets + manifest"
+echo "==> Step 4: Emit assets"
 
 emit_ns_assets "dtln" "${BUNDLE_TMP}" "${WASM}"
