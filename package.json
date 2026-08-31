@@ -8,7 +8,8 @@
     "build:livekit": "./scripts/build-livekit-bundle.sh",
     "fetch:mediapipe": "./scripts/fetch-mediapipe-assets.sh",
     "smoke:ns-worklet": "node scripts/smoke-ns-worklet.mjs",
-    "smoke:stt-worker": "node scripts/smoke-stt-worker.mjs"
+    "smoke:stt-worker": "node scripts/smoke-stt-worker.mjs",
+    "test:js": "node --test \"src/**/*.test.mjs\""
   },
   "devDependencies": {
     "@ricky0123/vad-web": "0.0.30",

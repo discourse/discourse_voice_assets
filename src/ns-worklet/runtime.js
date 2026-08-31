@@ -1,4 +1,4 @@
-import Resampler from "../../assets/javascripts/discourse/lib/resenha/resampler";
+import Resampler from "./resampler";
 
 // After this many consecutive engine failures the processor gives up and
 // passes audio through untouched; a broken filter must never mute the mic.
