@@ -72,5 +72,6 @@ node scripts/smoke-stt-worker.mjs
 
 ```bash
 bundle install
-bundle exec rspec
+bundle exec rspec  # vendor tree / manifest integrity
+pnpm test:js       # worklet source unit tests (node --test)
 ```
