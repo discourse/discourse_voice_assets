@@ -7,9 +7,9 @@ RSpec.describe DiscourseVoiceAssets do
 
   it "vendors exactly the declared asset directories" do
     on_disk =
-      Dir.children(described_class.vendor_path).select do |c|
-        File.directory?(described_class.vendor_path(c))
-      end
+      Dir
+        .children(described_class.vendor_path)
+        .select { |c| File.directory?(described_class.vendor_path(c)) }
     expect(on_disk.sort).to eq(described_class::DIRECTORIES)
   end
 
