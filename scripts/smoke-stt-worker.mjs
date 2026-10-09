@@ -10,16 +10,18 @@
 // Generate a fixture with e.g.:
 //   flite -t "the quick brown fox jumps over the lazy dog" /tmp/fix.wav
 //
-// Requires a WebGPU-capable GPU. First run downloads ~2.5GB from
-// HuggingFace into the profile at .local/stt-smoke-profile/.
+// Requires a WebGPU-capable GPU and a model, given as one of:
+// STT_MODEL_DIR=/path/to/model-dir serves a local directory (validates the
+// mirror layout); STT_MODEL_BASE_URL=https://... tests a remote mirror or
+// HuggingFace folder directly. Downloads are cached in the profile at
+// .local/stt-smoke-profile/ between runs.
 //
-// Env knobs: STT_MODEL_DIR=/path/to/mirror serves the model from a local
-// directory (validates the resenha_stt_model_base_url mirror path);
-// STT_MODEL_BASE_URL=https://... tests a remote mirror/bucket directly;
-// STT_BACKEND / STT_ENCODER_QUANT override the worker defaults;
-// STT_BROWSER=firefox runs in Playwright Firefox — the only browser with
-// WebGPU shader-f16 on Linux, so the only local way to exercise the fp16
-// encoder end-to-end.
+// Other env knobs: STT_BACKEND overrides the worker's backend (e.g. "wasm"
+// to validate a model's graph without a GPU); STT_BROWSER=firefox runs in
+// Playwright Firefox; STT_HEADED=1 runs Chromium headed, which is what
+// reaches the real GPU on some Linux setups where headless only gets
+// SwiftShader or no adapter at all; STT_CHROMIUM_ARGS replaces the
+// Chromium GPU flags (space-separated).
 import http from "node:http";
 import { createReadStream } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
@@ -34,6 +36,10 @@ const gemRoot = path.resolve(
 const fixturePath = process.argv[2];
 if (!fixturePath) {
   console.error("usage: node scripts/smoke-stt-worker.mjs <speech.wav>");
+  process.exit(2);
+}
+if (!process.env.STT_MODEL_DIR && !process.env.STT_MODEL_BASE_URL) {
+  console.error("set STT_MODEL_DIR or STT_MODEL_BASE_URL");
   process.exit(2);
 }
 
@@ -65,7 +71,7 @@ window.runTest = async (paths) => {
   });
   worker.postMessage({
     type: "init",
-    config: { modelBaseUrl: paths.modelBaseAbsolute || (paths.modelBase ? new URL(paths.modelBase, location).href : null), ortWasmJsUrl: new URL(paths.ortJs, location).href, ortWasmBinaryUrl: new URL(paths.ortBinary, location).href, backend: paths.backend, encoderQuant: paths.encoderQuant },
+    config: { modelBaseUrl: paths.modelBaseAbsolute || (paths.modelBase ? new URL(paths.modelBase, location).href : null), ortWasmJsUrl: new URL(paths.ortJs, location).href, ortWasmBinaryUrl: new URL(paths.ortBinary, location).href, backend: paths.backend },
   });
   await ready;
   window.log("worker ready");
@@ -138,6 +144,11 @@ window.runTest = async (paths) => {
 </script>`;
 
 const sttDir = path.join(gemRoot, "vendor/stt");
+// Served under the directory's own name: the worker caches by URL, so two
+// model directories sharing one URL would read each other's cached files.
+const modelPrefix = process.env.STT_MODEL_DIR
+  ? `/model/${path.basename(path.resolve(process.env.STT_MODEL_DIR))}/`
+  : null;
 const server = http.createServer(async (req, res) => {
   try {
     const url = req.url.split("?")[0];
@@ -146,9 +157,12 @@ const server = http.createServer(async (req, res) => {
       res.end(PAGE);
     } else if (url === "/fixture.wav") {
       res.end(await readFile(fixturePath));
-    } else if (url.startsWith("/model/") && process.env.STT_MODEL_DIR) {
-      // Streamed: the encoder external-data file is >2GiB, past readFile's cap.
-      const file = path.join(process.env.STT_MODEL_DIR, url.slice(7));
+    } else if (modelPrefix && url.startsWith(modelPrefix)) {
+      // Streamed: model files run to hundreds of MB.
+      const file = path.join(
+        process.env.STT_MODEL_DIR,
+        url.slice(modelPrefix.length)
+      );
       res.setHeader("content-length", (await stat(file)).size);
       createReadStream(file).pipe(res);
     } else if (url.startsWith("/stt/")) {
@@ -195,16 +209,21 @@ const context = useFirefox
       path.join(gemRoot, ".local/stt-smoke-profile"),
       {
         executablePath: process.env.CHROMIUM_BIN || undefined,
-        headless: true,
-        args: [
-          "--enable-unsafe-webgpu",
-          // Vulkan alone still falls back to SwiftShader in headless; the
-          // FromANGLE pair is what actually reaches the host GPU.
-          "--enable-features=Vulkan,VulkanFromANGLE,DefaultANGLEVulkan",
-          "--use-angle=vulkan",
-          "--ignore-gpu-blocklist",
-          "--autoplay-policy=no-user-gesture-required",
-        ],
+        headless: process.env.STT_HEADED !== "1",
+        args: process.env.STT_CHROMIUM_ARGS
+          ? [
+              ...process.env.STT_CHROMIUM_ARGS.split(" "),
+              "--autoplay-policy=no-user-gesture-required",
+            ]
+          : [
+              "--enable-unsafe-webgpu",
+              // Vulkan alone still falls back to SwiftShader in headless; the
+              // FromANGLE pair is what actually reaches the host GPU.
+              "--enable-features=Vulkan,VulkanFromANGLE,DefaultANGLEVulkan",
+              "--use-angle=vulkan",
+              "--ignore-gpu-blocklist",
+              "--autoplay-policy=no-user-gesture-required",
+            ],
       }
     );
 const page = await context.newPage();
@@ -227,13 +246,12 @@ try {
   const result = await page.evaluate((paths) => window.runTest(paths), {
     worker: toLocal("subtitles-worker.js"),
     vadBundle: toLocal("vad.js"),
-    ortJs: toLocal("ort/ort-wasm-simd-threaded.jsep.js"),
-    ortBinary: toLocal("ort/ort-wasm-simd-threaded.jsep.wasm"),
+    ortJs: toLocal("ort/ort-wasm-simd-threaded.asyncify.js"),
+    ortBinary: toLocal("ort/ort-wasm-simd-threaded.asyncify.wasm"),
     vadAssets: toLocal("vad/"),
-    modelBase: process.env.STT_MODEL_DIR ? "/model/" : undefined,
+    modelBase: modelPrefix || undefined,
     modelBaseAbsolute: process.env.STT_MODEL_BASE_URL || undefined,
     backend: process.env.STT_BACKEND || undefined,
-    encoderQuant: process.env.STT_ENCODER_QUANT || undefined,
   });
   console.log("RESULT", JSON.stringify(result));
   const pass = result.direct?.trim().length > 0 && result.utterances.length > 0;
