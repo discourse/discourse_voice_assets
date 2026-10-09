@@ -27,8 +27,8 @@ RSpec.describe DiscourseVoiceAssets do
     rnnoise/rnnoise.wasm
     stt/subtitles-worker.js
     stt/vad.js
-    stt/ort/ort-wasm-simd-threaded.jsep.js
-    stt/ort/ort-wasm-simd-threaded.jsep.wasm
+    stt/ort/ort-wasm-simd-threaded.asyncify.js
+    stt/ort/ort-wasm-simd-threaded.asyncify.wasm
     stt/vad/silero_vad_v5.onnx
     stt/vad/silero_vad_legacy.onnx
     stt/vad/vad.worklet.bundle.min.js
