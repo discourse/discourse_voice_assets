@@ -1,0 +1,4 @@
+# parakeet.js pins onnxruntime-web exactly and vad-web takes any ^1.17;
+# both must share the single runtime the build ships.
+overrides:
+  onnxruntime-web: 1.30.0

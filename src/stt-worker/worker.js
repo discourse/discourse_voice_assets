@@ -1,3 +1,6 @@
+// Bare specifier on purpose: the build aliases every "onnxruntime-web"
+// import (ours and parakeet.js's) to the native WebGPU EP entry, so both
+// share one runtime instance.
 import { env as ortEnv } from "onnxruntime-web";
 import { fromUrls } from "parakeet.js";
 
@@ -8,17 +11,17 @@ import { fromUrls } from "parakeet.js";
 // progress*/ready | error, so the UI can show download progress and flip
 // the toggle off on any failure.
 //
-// The encoder runs on WebGPU — fp16 when the adapter exposes shader-f16,
-// else fp32 (without the feature, fp16 silently decodes to empty strings;
-// see docs/subtitles-fp16-encoder.md) — the decoder on
-// single-threaded WASM (int8) — single-threaded on purpose: multithreaded
-// ort-wasm needs SharedArrayBuffer and therefore COOP/COEP headers
-// Discourse doesn't set.
-
-// Discourse's clone of ysdede/parakeet-tdt-0.6b-v3-onnx (models CC-BY-4.0);
-// overridable per site via the resenha_stt_model_base_url setting.
-const DEFAULT_MODEL_BASE =
-  "https://huggingface.co/Discourse/parakeet-tdt-0.6b-v3-onnx/resolve/main";
+// Model-agnostic: the caller picks the model by passing the base URL of a
+// directory holding the three files below (a Parakeet TDT export with a
+// single-file, MatMulNBits-quantized encoder). The encoder runs on WebGPU,
+// the decoder on single-threaded WASM — single-threaded on purpose:
+// multithreaded ort-wasm needs SharedArrayBuffer and therefore COOP/COEP
+// headers Discourse doesn't set.
+const MODEL_FILES = {
+  encoder: "encoder-model.onnx",
+  decoder: "decoder_joint-model.int8.onnx",
+  tokenizer: "vocab.txt",
+};
 const SAMPLE_RATE = 16000;
 const MODEL_CACHE = "resenha-stt-model";
 
@@ -67,18 +70,18 @@ const CACHE_CHUNK_BYTES = 128 * 1024 * 1024;
 
 // The Cache API ignores URL fragments, so slice identity rides a query
 // parameter no origin server ever sees.
+const CACHE_KEY_PARAM = "resenha_cache";
+
 function cacheKey(url, suffix) {
-  return `${url}${url.includes("?") ? "&" : "?"}resenha_cache=${suffix}`;
+  return `${url}${url.includes("?") ? "&" : "?"}${CACHE_KEY_PARAM}=${suffix}`;
 }
 
 // Fetches one model file with a durable Cache API copy and streamed byte
 // progress, returning an object URL for fromUrls. The Cache API stores the
-// multi-GB encoder weights on disk, so repeat enables skip the network even
-// when the HTTP cache has evicted them; if the cache is unavailable (quota,
-// private browsing) the fetch still works, just uncached.
-async function fetchModelFile(url, filename) {
-  const cache = await caches.open(MODEL_CACHE).catch(() => null);
-
+// encoder weights on disk, so repeat enables skip the network even when the
+// HTTP cache has evicted them; if the cache is unavailable (quota, private
+// browsing) the fetch still works, just uncached.
+async function fetchModelFile(cache, url, filename) {
   let blob = cache ? await readCachedFile(cache, url).catch(() => null) : null;
   if (!blob && cache) {
     try {
@@ -95,12 +98,6 @@ async function fetchModelFile(url, filename) {
 }
 
 async function readCachedFile(cache, url) {
-  // Complete copies stored by the pre-slicing format keep working.
-  const legacy = await cache.match(url);
-  if (legacy) {
-    return legacy.blob();
-  }
-
   const manifestResponse = await cache.match(cacheKey(url, "manifest"));
   if (!manifestResponse) {
     return null;
@@ -203,6 +200,20 @@ async function openModelDownload(url, filename) {
   };
 }
 
+// Only one model is kept on disk: switching models (or mirrors) drops the
+// previous one's files, which would otherwise pin hundreds of MB to GBs of
+// origin storage nobody reads again.
+async function evictOtherModels(cache, urls) {
+  const wanted = new Set(urls);
+  for (const request of await cache.keys()) {
+    const url = new URL(request.url);
+    url.searchParams.delete(CACHE_KEY_PARAM);
+    if (!wanted.has(url.href)) {
+      await cache.delete(request);
+    }
+  }
+}
+
 async function discardCachedFile(cache, url) {
   await cache.delete(cacheKey(url, "manifest"));
   // Slices are contiguous from zero; stop at the first miss.
@@ -234,21 +245,9 @@ async function initialize(config) {
     if (!navigator.gpu) {
       throw new Error("WebGPU is not available in this browser");
     }
-
-    // fp16 halves the model download and every activation buffer, but is
-    // only usable where the adapter exposes shader-f16 (no Linux Chromium
-    // today): without it, onnxruntime-web silently mis-executes fp16
-    // models into garbage instead of erroring, and transcription returns
-    // empty strings. See docs/subtitles-fp16-encoder.md. Same argument-less
-    // requestAdapter call onnxruntime-web uses, so the answer matches the
-    // adapter it will run on.
-    let encoderQuant = config.encoderQuant;
-    if (encoderQuant !== "fp16" && encoderQuant !== "fp32") {
-      const adapter = await navigator.gpu.requestAdapter();
-      encoderQuant = adapter?.features?.has("shader-f16") ? "fp16" : "fp32";
+    if (!config.modelBaseUrl) {
+      throw new Error("modelBaseUrl is required");
     }
-    // eslint-disable-next-line no-console
-    console.debug("[resenha] stt encoder quant:", encoderQuant);
 
     // Explicit URLs (not a directory prefix) for the ort runtime, set on
     // the bundled ort instance directly: the library's wasmPaths option is
@@ -260,37 +259,32 @@ async function initialize(config) {
       wasm: config.ortWasmBinaryUrl,
     };
 
-    const options = {
+    const base = config.modelBaseUrl.replace(/\/$/, "");
+    const urls = Object.fromEntries(
+      Object.entries(MODEL_FILES).map(([role, name]) => [
+        role,
+        new URL(`${base}/${name}`, self.location.href).href,
+      ])
+    );
+
+    const cache = await caches.open(MODEL_CACHE).catch(() => null);
+    if (cache) {
+      await evictOtherModels(cache, Object.values(urls)).catch(() => {});
+    }
+    const file = (role) => fetchModelFile(cache, urls[role], MODEL_FILES[role]);
+
+    model = await fromUrls({
       // Must be a mode parakeet.js maps to execution providers
       // ("webgpu-hybrid"/"webgpu-strict"/"wasm"): the bare "webgpu" alias
       // falls through its EP selection, leaving executionProviders empty,
       // and onnxruntime-web then silently runs the encoder on the CPU EP.
       backend: config.backend || "webgpu-hybrid",
-      encoderQuant,
-      decoderQuant: config.decoderQuant || "int8",
       cpuThreads: 1,
-      progress: ({ loaded, total, file }) =>
-        self.postMessage({ type: "progress", loaded, total, file }),
-    };
-
-    const base = (config.modelBaseUrl || DEFAULT_MODEL_BASE).replace(/\/$/, "");
-    const file = (name) => fetchModelFile(`${base}/${name}`, name);
-    // The fp16 encoder is a single self-contained file; only fp32 splits
-    // its weights into an external-data sidecar.
-    const encoderFile =
-      encoderQuant === "fp16" ? "encoder-model.fp16.onnx" : "encoder-model.onnx";
-    model = await fromUrls({
-      ...options,
-      encoderUrl: await file(encoderFile),
-      ...(encoderQuant === "fp32"
-        ? { encoderDataUrl: await file("encoder-model.onnx.data") }
-        : {}),
-      decoderUrl: await file("decoder_joint-model.int8.onnx"),
-      tokenizerUrl: await file("vocab.txt"),
-      // Required for encoderDataUrl to take effect: ort maps the external
-      // data to "<filenames.encoder>.data", which must match the path the
-      // onnx file references internally.
-      filenames: { encoder: encoderFile },
+      progress: ({ loaded, total, file: name }) =>
+        self.postMessage({ type: "progress", loaded, total, file: name }),
+      encoderUrl: await file("encoder"),
+      decoderUrl: await file("decoder"),
+      tokenizerUrl: await file("tokenizer"),
       preprocessorBackend: "js",
     });
 

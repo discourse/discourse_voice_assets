@@ -13,11 +13,11 @@ reproducible build scripts that produce every artifact.
 | `vendor/rnnoise` | RNNoise noise-suppression worklet + wasm (~130 KB) | [xiph/rnnoise](https://github.com/xiph/rnnoise) @ v0.1.1 | BSD-3-Clause |
 | `vendor/dtln` | DTLN noise-suppression worklet + wasm (~6 MB) | [DataDog/dtln-rs](https://github.com/DataDog/dtln-rs) | Apache-2.0 |
 | `vendor/dfn3` | DeepFilterNet3 worklet + wasm (~9.5 MB) + model (~8 MB) | [Rikorose/DeepFilterNet](https://github.com/Rikorose/DeepFilterNet) | MIT/Apache-2.0 |
-| `vendor/stt` | Live-subtitles runtime: parakeet.js worker, Silero VAD, onnxruntime-web (~41 MB) | [parakeet.js](https://github.com/ysdede/parakeet.js), [@ricky0123/vad-web](https://github.com/ricky0123/vad), [onnxruntime-web](https://onnxruntime.ai) | Apache-2.0 / MIT |
+| `vendor/stt` | Live-subtitles runtime: parakeet.js worker, Silero VAD, onnxruntime-web (~30 MB) | [parakeet.js](https://github.com/ysdede/parakeet.js), [@ricky0123/vad-web](https://github.com/ricky0123/vad), [onnxruntime-web](https://onnxruntime.ai) | Apache-2.0 / MIT |
 | `vendor/mediapipe` | Background-blur segmentation: tasks-vision runtime + `selfie_segmenter.tflite` (~22 MB) | [MediaPipe](https://github.com/google-ai-edge/mediapipe), © Google | Apache-2.0 |
 | `vendor/livekit` | Self-contained `livekit-client` ESM bundle (~530 KB) | [livekit-client](https://github.com/livekit/client-sdk-js) | Apache-2.0 |
 
-The ~2.5 GB speech-to-text model weights are **not** vendored — they download
+The speech-to-text model weights (~200–400 MB per model) are **not** vendored — they download
 at runtime from HuggingFace (or a self-hosted mirror).
 
 ## How the plugin consumes it

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
 # Builds the speech-to-text assets behind live subtitles:
-#   1. subtitles-worker.<hash>.js — parakeet.js + its onnxruntime-web (1.24.1)
-#      bundled into a classic Worker script (esbuild)
+#   1. subtitles-worker.<hash>.js — parakeet.js + onnxruntime-web's native
+#      WebGPU EP entry bundled into a classic Worker script (esbuild)
 #   2. vad.<hash>.js — @ricky0123/vad-web (Silero VAD) + onnxruntime-web
 #      bundled as an ES module, dynamic-import()ed on the main thread
 #   3. The onnxruntime runtime pair + the VAD model/worklet, under stable
@@ -11,8 +11,8 @@
 #      nginx serves .mjs as application/octet-stream, which module imports
 #      hard-reject, so nothing user-facing may carry a .mjs extension.
 #
-# Model weights (~2.5GB) are NOT built or committed: they come from
-# HuggingFace at runtime (or a resenha_stt_model_base_url mirror).
+# Model weights (~200-400MB per model) are NOT built or committed: they come
+# from HuggingFace at runtime (or a voice_stt_model_base_url mirror).
 #
 # Versions are pinned via package.json devDependencies (parakeet.js,
 # @ricky0123/vad-web). Commit the regenerated vendor/stt/.
@@ -40,8 +40,13 @@ WORKER_TMP="$(mktemp --suffix=.js)"
 VAD_TMP="$(mktemp --suffix=.vad.js)"
 trap 'rm -f "${WORKER_TMP}" "${VAD_TMP}"' EXIT
 
+# parakeet.js imports the default (JSEP) entry; the alias swaps it for the
+# native WebGPU EP build, whose MatMulNBits handles the 2-bit and 4-bit
+# encoders JSEP rejects or mis-executes.
 pnpm exec esbuild "${GEM_ROOT}/src/stt-worker/worker.js" \
-  --bundle --format=iife --minify --outfile="${WORKER_TMP}"
+  --bundle --format=iife --minify \
+  --alias:onnxruntime-web=onnxruntime-web/webgpu \
+  --outfile="${WORKER_TMP}"
 
 echo "==> Step 2: Bundle the VAD module (@ricky0123/vad-web ${VAD_VERSION})"
 
@@ -65,11 +70,12 @@ install -m 644 "${WORKER_TMP}" "${OUTPUT_DIR}/subtitles-worker.js"
 install -m 644 "${VAD_TMP}" "${OUTPUT_DIR}/vad.js"
 
 # One runtime pair serves both consumers via explicit {mjs, wasm} URLs; the
-# jsep build is a superset (wasm + webgpu execution providers).
-install -m 644 node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.jsep.wasm \
-  "${OUTPUT_DIR}/${ORT_DIR}/ort-wasm-simd-threaded.jsep.wasm"
-install -m 644 node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.jsep.mjs \
-  "${OUTPUT_DIR}/${ORT_DIR}/ort-wasm-simd-threaded.jsep.js"
+# asyncify build (what the webgpu entry loads) is a superset of the plain
+# wasm one, so the VAD's wasm-only frontend runs on it too.
+install -m 644 node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.asyncify.wasm \
+  "${OUTPUT_DIR}/${ORT_DIR}/ort-wasm-simd-threaded.asyncify.wasm"
+install -m 644 node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.asyncify.mjs \
+  "${OUTPUT_DIR}/${ORT_DIR}/ort-wasm-simd-threaded.asyncify.js"
 
 install -m 644 node_modules/@ricky0123/vad-web/dist/silero_vad_v5.onnx \
   node_modules/@ricky0123/vad-web/dist/silero_vad_legacy.onnx \
